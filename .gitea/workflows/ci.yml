@@ -25,8 +25,7 @@ jobs:
         run: CGO_ENABLED=1 go test -race ./...
       - name: Build deb
         run: VERSION=0.0.0-ci-${GITHUB_SHA::7} ARCH=amd64 bash scripts/build-deb.sh
-      - name: Upload deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: vfw-deb
-          path: dist/*.deb
+      - name: Inspect package
+        run: |
+          ls -lh dist
+          sha256sum dist/*.deb
