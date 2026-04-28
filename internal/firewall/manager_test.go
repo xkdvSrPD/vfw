@@ -59,3 +59,22 @@ func TestBuildPortPlans(t *testing.T) {
 		t.Fatalf("missing expected plans: tcp22=%v udp53=%v", sawTCP22, sawUDP53)
 	}
 }
+
+func TestCanonicalSetMember(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "1.1.1.1/32", want: "1.1.1.1"},
+		{input: "10.0.0.0/8", want: "10.0.0.0/8"},
+		{input: "  1.2.3.4  ", want: "1.2.3.4"},
+	}
+
+	for _, test := range tests {
+		if got := canonicalSetMember(test.input); got != test.want {
+			t.Fatalf("canonicalSetMember(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}

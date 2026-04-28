@@ -3,6 +3,7 @@ package firewall
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"os/exec"
 	goruntime "runtime"
@@ -74,7 +75,7 @@ func (m *Manager) syncDesiredSets(ctx context.Context, rules []model.Rule, setEn
 		}
 		wantMembers := make(map[string]struct{}, len(setEntries[rule.SetName]))
 		for _, value := range setEntries[rule.SetName] {
-			wantMembers[value] = struct{}{}
+			wantMembers[canonicalSetMember(value)] = struct{}{}
 		}
 		var toAdd []string
 		for value := range wantMembers {
@@ -234,7 +235,7 @@ func (m *Manager) readSetMembers(ctx context.Context, setName string) (map[strin
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(strings.TrimSpace(line))
 		if len(fields) >= 3 && fields[0] == "add" && fields[1] == setName {
-			members[fields[2]] = struct{}{}
+			members[canonicalSetMember(fields[2])] = struct{}{}
 		}
 	}
 	return members, nil
@@ -430,6 +431,21 @@ func stringSliceContains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func canonicalSetMember(value string) string {
+	value = strings.TrimSpace(value)
+	if prefix, err := netip.ParsePrefix(value); err == nil {
+		prefix = prefix.Masked()
+		if prefix.Addr().Is4() && prefix.Bits() == 32 {
+			return prefix.Addr().String()
+		}
+		return prefix.String()
+	}
+	if addr, err := netip.ParseAddr(value); err == nil {
+		return addr.String()
+	}
+	return value
 }
 
 func ensureSupportedOS() error {
