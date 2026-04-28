@@ -28,6 +28,7 @@ vfw allow 3306 from city 1796236 tcp
 vfw allow 8080 from 1.1.1.1,10.0.0.0/8 tcp
 
 vfw ls
+vfw status
 vfw version
 vfw delete 2
 vfw enable
@@ -57,9 +58,9 @@ export VFW_CONFIG_DIR=/etc/vfw
 export VFW_LOG_DIR=/var/log/vfw
 export VFW_DATA_DIR=/usr/local/bin
 export VFW_REFRESH_DAYS=1
-export VFW_GEOIP_ASN_URL=https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-ASN.mmdb
-export VFW_GEOIP_COUNTRY_URL=https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb
-export VFW_GEOIP_CITY_URL=https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
+export VFW_GEOIP_ASN_URL=https://git.vio.vin/violet/GeoLite2-City/raw/branch/main/GeoLite2-ASN.mmdb
+export VFW_GEOIP_COUNTRY_URL=https://git.vio.vin/violet/GeoLite2-City/raw/branch/main/GeoLite2-Country.mmdb
+export VFW_GEOIP_CITY_URL=https://git.vio.vin/violet/GeoLite2-City/raw/branch/main/GeoLite2-City.mmdb
 ```
 
 ## Packaging

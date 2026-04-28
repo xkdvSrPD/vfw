@@ -34,7 +34,7 @@ func TestResolveRulesWithoutMMDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveRules returned error: %v", err)
 	}
-	if len(resolved[rules[0].SetName]) != 1 || resolved[rules[0].SetName][0] != "0.0.0.0/0" {
+	if len(resolved[rules[0].SetName]) != 0 {
 		t.Fatalf("unexpected all-source resolution: %#v", resolved[rules[0].SetName])
 	}
 	if len(resolved[rules[1].SetName]) != 2 {

@@ -25,7 +25,11 @@ func RenderRules(rules []model.Rule) string {
 			rule.CanonicalCommand(),
 		})
 	}
+	return Render(headers, rows)
+}
 
+// Render prints an arbitrary string matrix as a plain text table.
+func Render(headers []string, rows [][]string) string {
 	widths := make([]int, len(headers))
 	for i, header := range headers {
 		widths[i] = len(header)

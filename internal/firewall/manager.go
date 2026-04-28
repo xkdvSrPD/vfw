@@ -167,6 +167,45 @@ func (m *Manager) Disable(ctx context.Context) error {
 	return nil
 }
 
+// InputJumpPresent reports whether INPUT currently jumps into the vfw base chain.
+func (m *Manager) InputJumpPresent(ctx context.Context) (bool, error) {
+	if _, err := m.exec.Run(ctx, m.cfg.IPTablesBinary, "-w", "-C", "INPUT", "-j", baseChain); err == nil {
+		return true, nil
+	}
+	return false, nil
+}
+
+// ListVFWChains returns every vfw-managed iptables chain.
+func (m *Manager) ListVFWChains(ctx context.Context) ([]string, error) {
+	return m.listVFWChains(ctx)
+}
+
+// ListVFWSets returns every vfw-managed ipset.
+func (m *Manager) ListVFWSets(ctx context.Context) ([]string, error) {
+	return m.listVFWSetNames(ctx)
+}
+
+// SetEntryCount returns the current number of entries in a named ipset.
+func (m *Manager) SetEntryCount(ctx context.Context, setName string) (int, error) {
+	output, err := m.exec.Run(ctx, m.cfg.IPSetBinary, "list", setName)
+	if err != nil {
+		return 0, fmt.Errorf("inspect ipset %s: %w", setName, err)
+	}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Number of entries:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "Number of entries:"))
+		count, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, fmt.Errorf("parse entry count for %s: %w", setName, err)
+		}
+		return count, nil
+	}
+	return 0, fmt.Errorf("entry count not found for ipset %s", setName)
+}
+
 func (m *Manager) ensureSet(ctx context.Context, setName string) error {
 	_, err := m.exec.Run(ctx, m.cfg.IPSetBinary, "create", setName, "hash:net", "family", "inet", "hashsize", "1024", "maxelem", "1048576", "-exist")
 	if err != nil {

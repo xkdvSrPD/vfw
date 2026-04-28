@@ -101,7 +101,7 @@ func (s *Service) ResolveRules(ctx context.Context, rules []model.Rule) (map[str
 		results[rule.SetName] = make(map[string]struct{})
 		switch rule.Source.Type {
 		case model.SourceAll:
-			results[rule.SetName]["0.0.0.0/0"] = struct{}{}
+			// Allow-all rules are handled directly in iptables and keep an empty ipset.
 		case model.SourceIP:
 			for _, value := range rule.Source.Values {
 				results[rule.SetName][value] = struct{}{}

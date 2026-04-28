@@ -53,6 +53,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	switch strings.ToLower(args[0]) {
 	case "ls":
 		return a.listRules(ctx)
+	case "status":
+		return a.status(ctx)
 	case "version":
 		return a.version()
 	case "enable":
@@ -68,7 +70,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "add", "allow":
 		return a.addRule(ctx, args)
 	default:
-		return a.printUsage()
+		_ = a.printUsage()
+		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
@@ -303,6 +306,7 @@ Usage:
   vfw allow <port> [from] <asn|country|city> <values> [tcp|udp]
   vfw add allow <port> [from <selector>] [tcp|udp]
   vfw ls
+  vfw status
   vfw version
   vfw delete <index>
   vfw enable
