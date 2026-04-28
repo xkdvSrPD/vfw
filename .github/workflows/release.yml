@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (without v prefix, e.g. 1.0.0)"
+        required: true
+        type: string
 
 jobs:
   release:
@@ -18,9 +24,14 @@ jobs:
       - name: Install packaging deps
         run: sudo apt-get update && sudo apt-get install -y dpkg-dev build-essential
       - name: Build deb
-        run: VERSION="${GITHUB_REF_NAME#v}" ARCH=amd64 bash scripts/build-deb.sh
+        run: |
+          VERSION="${{ inputs.version || '' }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          ARCH=amd64 bash scripts/build-deb.sh
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION }}
           files: dist/*.deb
           generate_release_notes: true
