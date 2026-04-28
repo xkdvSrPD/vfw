@@ -27,6 +27,7 @@ jobs:
         run: |
           VERSION="${{ inputs.version || '' }}"
           if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          export VERSION
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           ARCH=amd64 bash scripts/build-deb.sh
       - name: Publish release
