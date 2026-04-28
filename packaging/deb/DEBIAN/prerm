@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+case "$1" in
+    remove|purge|deconfigure)
+        if [ -x /usr/local/bin/vfw ]; then
+            if [ -r /etc/default/vfw ]; then
+                . /etc/default/vfw
+            fi
+            /usr/local/bin/vfw disable >/dev/null 2>&1 || true
+        fi
+        ;;
+esac

@@ -1,0 +1,7 @@
+vfw for Debian/Ubuntu
+=====================
+
+1. Install with `apt install ./vfw_<version>_<arch>.deb`.
+2. Verify `iptables` and `ipset` are installed.
+3. Add at least one SSH allow rule before `vfw enable`.
+4. Use `vfw refresh --force` if the initial mmdb download fails during install.

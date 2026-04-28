@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+mkdir -p /etc/vfw /var/log/vfw
+touch /var/log/vfw/vfw.log /var/log/vfw/cron.log
+
+if [ "$1" = "configure" ] && [ -x /usr/local/bin/vfw ]; then
+    if [ -r /etc/default/vfw ]; then
+        . /etc/default/vfw
+    fi
+    if ! /usr/local/bin/vfw refresh --force >> /var/log/vfw/install.log 2>&1; then
+        echo "vfw: initial mmdb download failed; run 'vfw refresh --force' manually after installation." >&2
+    fi
+fi

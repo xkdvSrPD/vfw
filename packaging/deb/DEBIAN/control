@@ -1,0 +1,10 @@
+Package: vfw
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: __ARCH__
+Maintainer: vfw maintainers
+Depends: iptables, ipset
+Description: UFW-like port protection tool driven by iptables and ipset
+ vfw stores allow rules under /etc/vfw and manages dedicated
+ iptables/ipset objects for Ubuntu and Debian servers.

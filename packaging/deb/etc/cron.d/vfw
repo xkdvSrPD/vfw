@@ -1,0 +1,4 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 * * * * root /bin/sh -c '. /etc/default/vfw 2>/dev/null || true; /usr/local/bin/vfw refresh >> /var/log/vfw/cron.log 2>&1'
