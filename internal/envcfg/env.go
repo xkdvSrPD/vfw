@@ -13,11 +13,11 @@ import (
 
 const (
 	// DefaultASNURL is the fallback download URL for the ASN database.
-	DefaultASNURL = "https://git.vio.vin/violet/GeoLite2-City/raw/branch/main/GeoLite2-ASN.mmdb"
+	DefaultASNURL = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-ASN.mmdb"
 	// DefaultCountryURL is the fallback download URL for the country database.
-	DefaultCountryURL = "https://git.vio.vin/violet/GeoLite2-City/raw/branch/main/GeoLite2-Country.mmdb"
+	DefaultCountryURL = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb"
 	// DefaultCityURL is the fallback download URL for the city database.
-	DefaultCityURL = "https://git.vio.vin/violet/GeoLite2-City/raw/branch/main/GeoLite2-City.mmdb"
+	DefaultCityURL = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
 )
 
 const (
