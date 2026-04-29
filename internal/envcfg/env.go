@@ -31,12 +31,16 @@ type Config struct {
 	ConfigDir      string
 	LogDir         string
 	DataDir        string
-	ASNURL         string
-	CountryURL     string
-	CityURL        string
 	RefreshDays    int
 	IPTablesBinary string
 	IPSetBinary    string
+}
+
+// GeoIPURLs contains the download locations used for mmdb refreshes.
+type GeoIPURLs struct {
+	ASN     string
+	Country string
+	City    string
 }
 
 // Load reads environment variables and resolves runtime defaults.
@@ -54,13 +58,19 @@ func Load() (Config, error) {
 		ConfigDir:      envString("VFW_CONFIG_DIR", "/etc/vfw"),
 		LogDir:         envString("VFW_LOG_DIR", "/var/log/vfw"),
 		DataDir:        envString("VFW_DATA_DIR", dataDir),
-		ASNURL:         envString("VFW_GEOIP_ASN_URL", DefaultASNURL),
-		CountryURL:     envString("VFW_GEOIP_COUNTRY_URL", DefaultCountryURL),
-		CityURL:        envString("VFW_GEOIP_CITY_URL", DefaultCityURL),
 		RefreshDays:    refreshDays,
 		IPTablesBinary: envString("VFW_IPTABLES_BIN", "iptables"),
 		IPSetBinary:    envString("VFW_IPSET_BIN", "ipset"),
 	}, nil
+}
+
+// LoadGeoIPURLs reads the optional mmdb download URL overrides from the environment.
+func LoadGeoIPURLs() GeoIPURLs {
+	return GeoIPURLs{
+		ASN:     envString("VFW_GEOIP_ASN_URL", DefaultASNURL),
+		Country: envString("VFW_GEOIP_COUNTRY_URL", DefaultCountryURL),
+		City:    envString("VFW_GEOIP_CITY_URL", DefaultCityURL),
+	}
 }
 
 // ASNDBPath returns the on-disk location of the ASN mmdb file.

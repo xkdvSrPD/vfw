@@ -27,6 +27,8 @@ type App struct {
 	fw    *firewall.Manager
 	out   io.Writer
 	err   io.Writer
+
+	checkPrerequisites func() error
 }
 
 // New constructs the CLI application with default dependencies.
@@ -35,13 +37,15 @@ func New(stdout io.Writer, stderr io.Writer) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	manager := firewall.NewManager(cfg, nil)
 	return &App{
-		cfg:   cfg,
-		store: config.NewStore(cfg.ConfigDir),
-		mmdb:  mmdb.NewService(cfg),
-		fw:    firewall.NewManager(cfg, nil),
-		out:   stdout,
-		err:   stderr,
+		cfg:                cfg,
+		store:              config.NewStore(cfg.ConfigDir),
+		mmdb:               mmdb.NewService(cfg),
+		fw:                 manager,
+		out:                stdout,
+		err:                stderr,
+		checkPrerequisites: manager.CheckPrerequisites,
 	}, nil
 }
 
@@ -76,9 +80,6 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func (a *App) addRule(ctx context.Context, args []string) error {
-	if err := a.fw.CheckPrerequisites(); err != nil {
-		return err
-	}
 	rule, err := parser.ParseAddRule(args)
 	if err != nil {
 		return err
@@ -91,14 +92,8 @@ func (a *App) addRule(ctx context.Context, args []string) error {
 	if err := a.store.SaveRules(ctx, rules); err != nil {
 		return err
 	}
-	state, err := a.store.LoadState(ctx)
-	if err != nil {
-		return err
-	}
-	if state.Enabled {
-		if err := a.applyRules(ctx, rules, true); err != nil {
-			return fmt.Errorf("rule was saved but active firewall sync failed: %w", err)
-		}
+	if err := a.markConfigChanged(ctx); err != nil {
+		return fmt.Errorf("rule was saved but state update failed: %w", err)
 	}
 	fmt.Fprintf(a.out, "Added rule: %s\n\n", rule.CanonicalCommand())
 	fmt.Fprint(a.out, table.RenderRules(rules))
@@ -133,25 +128,15 @@ func (a *App) deleteRule(ctx context.Context, args []string) error {
 	if err := a.store.SaveRules(ctx, rules); err != nil {
 		return err
 	}
-	state, err := a.store.LoadState(ctx)
-	if err != nil {
-		return err
+	if err := a.markConfigChanged(ctx); err != nil {
+		return fmt.Errorf("rule was deleted from config but state update failed: %w", err)
 	}
-	if state.Enabled {
-		if err := a.applyRules(ctx, rules, true); err != nil {
-			return fmt.Errorf("rule was deleted from config but active firewall sync failed: %w", err)
-		}
-	}
-	updatedRules, err := a.store.LoadRules(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Fprint(a.out, table.RenderRules(updatedRules))
+	fmt.Fprint(a.out, table.RenderRules(rules))
 	return nil
 }
 
 func (a *App) enable(ctx context.Context) error {
-	if err := a.fw.CheckPrerequisites(); err != nil {
+	if err := a.systemPrerequisites(); err != nil {
 		return err
 	}
 	fmt.Fprintln(a.err, "Warning: make sure SSH port 22 is already allowed before enabling vfw, or you may lose remote access.")
@@ -160,15 +145,21 @@ func (a *App) enable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.applyRules(ctx, rules, true); err != nil {
+	downloaded, err := a.applyRules(ctx, rules)
+	if err != nil {
 		return err
 	}
 	state, err := a.store.LoadState(ctx)
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	state.Enabled = true
-	state.UpdatedAt = time.Now().UTC()
+	state.LastAppliedAt = now
+	if downloaded {
+		state.LastRefreshAt = now
+	}
+	state.UpdatedAt = now
 	if err := a.store.SaveState(ctx, state); err != nil {
 		return err
 	}
@@ -181,7 +172,7 @@ func (a *App) enable(ctx context.Context) error {
 }
 
 func (a *App) disable(ctx context.Context) error {
-	if err := a.fw.CheckPrerequisites(); err != nil {
+	if err := a.systemPrerequisites(); err != nil {
 		return err
 	}
 	if err := a.fw.Disable(ctx); err != nil {
@@ -201,7 +192,7 @@ func (a *App) disable(ctx context.Context) error {
 }
 
 func (a *App) reload(ctx context.Context) error {
-	if err := a.fw.CheckPrerequisites(); err != nil {
+	if err := a.systemPrerequisites(); err != nil {
 		return err
 	}
 	state, err := a.store.LoadState(ctx)
@@ -215,10 +206,16 @@ func (a *App) reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.applyRules(ctx, rules, false); err != nil {
+	downloaded, err := a.applyRules(ctx, rules)
+	if err != nil {
 		return err
 	}
-	state.UpdatedAt = time.Now().UTC()
+	now := time.Now().UTC()
+	state.LastAppliedAt = now
+	if downloaded {
+		state.LastRefreshAt = now
+	}
+	state.UpdatedAt = now
 	if err := a.store.SaveState(ctx, state); err != nil {
 		return err
 	}
@@ -227,7 +224,7 @@ func (a *App) reload(ctx context.Context) error {
 }
 
 func (a *App) refresh(ctx context.Context, args []string) error {
-	if err := a.fw.CheckPrerequisites(); err != nil {
+	if err := a.systemPrerequisites(); err != nil {
 		return err
 	}
 	force := len(args) == 1 && args[0] == "--force"
@@ -239,36 +236,46 @@ func (a *App) refresh(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if !force && !refreshDue(state.LastRefreshAt, a.cfg.RefreshDays) {
-		fmt.Fprintf(a.out, "refresh skipped: last successful refresh was at %s\n", state.LastRefreshAt.Format(time.RFC3339))
-		return nil
-	}
 
-	if err := a.mmdb.DownloadDatabases(ctx); err != nil {
+	downloaded, err := a.mmdb.EnsureCurrent(ctx, a.cfg.RefreshDays, force)
+	if err != nil {
 		_ = envcfg.AppendLog(ctx, a.cfg, "refresh failed during mmdb download: "+err.Error())
 		return err
 	}
 
+	reloaded := false
 	if state.Enabled {
 		rules, err := a.store.LoadRules(ctx)
 		if err != nil {
 			_ = envcfg.AppendLog(ctx, a.cfg, "refresh failed while reading rules: "+err.Error())
 			return err
 		}
-		if err := a.applyRules(ctx, rules, false); err != nil {
+		appliedDownload, err := a.applyRules(ctx, rules)
+		if err != nil {
 			_ = envcfg.AppendLog(ctx, a.cfg, "refresh failed while reloading active rules: "+err.Error())
 			return err
 		}
+		downloaded = downloaded || appliedDownload
+		reloaded = true
 	}
 
 	now := time.Now().UTC()
-	state.LastRefreshAt = now
+	if downloaded {
+		state.LastRefreshAt = now
+	}
+	if reloaded {
+		state.LastAppliedAt = now
+	}
 	state.UpdatedAt = now
 	if err := a.store.SaveState(ctx, state); err != nil {
 		return err
 	}
 	if err := envcfg.AppendLog(ctx, a.cfg, "refresh completed successfully"); err != nil {
 		return err
+	}
+	if !downloaded && !reloaded {
+		fmt.Fprintln(a.out, "refresh skipped: mmdb is current")
+		return nil
 	}
 	fmt.Fprintf(a.out, "refresh completed at %s\n", now.Format(time.RFC3339))
 	return nil
@@ -279,7 +286,7 @@ func (a *App) version() error {
 	return err
 }
 
-func (a *App) applyRules(ctx context.Context, rules []model.Rule, allowDownload bool) error {
+func (a *App) applyRules(ctx context.Context, rules []model.Rule) (bool, error) {
 	needsMMDB := false
 	for _, rule := range rules {
 		if rule.NeedsMMDB() {
@@ -287,16 +294,22 @@ func (a *App) applyRules(ctx context.Context, rules []model.Rule, allowDownload 
 			break
 		}
 	}
+	downloaded := false
 	if needsMMDB {
-		if err := a.mmdb.EnsureDatabases(ctx, allowDownload); err != nil {
-			return err
+		var err error
+		downloaded, err = a.mmdb.EnsureCurrent(ctx, a.cfg.RefreshDays, false)
+		if err != nil {
+			return false, err
 		}
 	}
 	setEntries, err := a.mmdb.ResolveRules(ctx, rules)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return a.fw.Apply(ctx, rules, setEntries)
+	if err := a.fw.Apply(ctx, rules, setEntries); err != nil {
+		return false, err
+	}
+	return downloaded, nil
 }
 
 func (a *App) printUsage() error {
@@ -317,12 +330,18 @@ Usage:
 	return err
 }
 
-func refreshDue(lastRefresh time.Time, days int) bool {
-	if lastRefresh.IsZero() {
-		return true
+func (a *App) markConfigChanged(ctx context.Context) error {
+	state, err := a.store.LoadState(ctx)
+	if err != nil {
+		return err
 	}
-	if days < 1 {
-		days = 1
+	state.LastConfigChangeAt = time.Now().UTC()
+	return a.store.SaveState(ctx, state)
+}
+
+func (a *App) systemPrerequisites() error {
+	if a.checkPrerequisites != nil {
+		return a.checkPrerequisites()
 	}
-	return time.Since(lastRefresh) >= time.Duration(days)*24*time.Hour
+	return a.fw.CheckPrerequisites()
 }

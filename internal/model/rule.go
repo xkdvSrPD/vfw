@@ -62,9 +62,11 @@ type Source struct {
 
 // State stores runtime flags that are independent from the rule list.
 type State struct {
-	Enabled       bool      `json:"enabled"`
-	LastRefreshAt time.Time `json:"last_refresh_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	Enabled            bool      `json:"enabled"`
+	LastRefreshAt      time.Time `json:"last_refresh_at"`
+	LastConfigChangeAt time.Time `json:"last_config_change_at"`
+	LastAppliedAt      time.Time `json:"last_applied_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // EnsureDefaults normalizes and completes a rule before persistence.

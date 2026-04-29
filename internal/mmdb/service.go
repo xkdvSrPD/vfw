@@ -3,6 +3,7 @@ package mmdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,12 @@ import (
 	"vfw/internal/model"
 )
 
+// DatabaseStatus reports whether the managed mmdb files are present and fresh enough to use.
+type DatabaseStatus struct {
+	Missing      []string
+	NeedsRefresh bool
+}
+
 // Service resolves vfw rules through local mmdb files.
 type Service struct {
 	cfg    envcfg.Config
@@ -37,6 +44,35 @@ func NewService(cfg envcfg.Config) *Service {
 	}
 }
 
+// Inspect reports whether the managed mmdb files are missing or older than the configured refresh interval.
+func (s *Service) Inspect(refreshDays int) (DatabaseStatus, error) {
+	if refreshDays < 1 {
+		refreshDays = 1
+	}
+	status := DatabaseStatus{}
+	var oldestModTime time.Time
+	for _, file := range s.databaseFiles() {
+		info, err := os.Stat(file.Path)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			status.Missing = append(status.Missing, file.Name)
+			continue
+		case err != nil:
+			return DatabaseStatus{}, fmt.Errorf("stat mmdb %s: %w", file.Path, err)
+		}
+		modTime := info.ModTime().UTC()
+		if oldestModTime.IsZero() || modTime.Before(oldestModTime) {
+			oldestModTime = modTime
+		}
+	}
+	if len(status.Missing) > 0 {
+		status.NeedsRefresh = true
+		return status, nil
+	}
+	status.NeedsRefresh = time.Since(oldestModTime) >= time.Duration(refreshDays)*24*time.Hour
+	return status, nil
+}
+
 // EnsureDatabases downloads missing mmdb files when requested.
 func (s *Service) EnsureDatabases(ctx context.Context, downloadIfMissing bool) error {
 	missing := s.missingPaths()
@@ -49,6 +85,21 @@ func (s *Service) EnsureDatabases(ctx context.Context, downloadIfMissing bool) e
 	return s.DownloadDatabases(ctx)
 }
 
+// EnsureCurrent refreshes the managed mmdb files when they are missing, stale, or force is true.
+func (s *Service) EnsureCurrent(ctx context.Context, refreshDays int, force bool) (bool, error) {
+	status, err := s.Inspect(refreshDays)
+	if err != nil {
+		return false, err
+	}
+	if !force && !status.NeedsRefresh {
+		return false, nil
+	}
+	if err := s.DownloadDatabases(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // DownloadDatabases refreshes all bundled mmdb files.
 func (s *Service) DownloadDatabases(ctx context.Context) error {
 	if err := os.MkdirAll(s.cfg.DataDir, 0o755); err != nil {
@@ -59,10 +110,11 @@ func (s *Service) DownloadDatabases(ctx context.Context) error {
 		url  string
 		path string
 	}
+	urls := envcfg.LoadGeoIPURLs()
 	tasks := []downloadTask{
-		{url: s.cfg.ASNURL, path: s.cfg.ASNDBPath()},
-		{url: s.cfg.CountryURL, path: s.cfg.CountryDBPath()},
-		{url: s.cfg.CityURL, path: s.cfg.CityDBPath()},
+		{url: urls.ASN, path: s.cfg.ASNDBPath()},
+		{url: urls.Country, path: s.cfg.CountryDBPath()},
+		{url: urls.City, path: s.cfg.CityDBPath()},
 	}
 
 	errCh := make(chan error, len(tasks))
@@ -282,14 +334,27 @@ func (s *Service) scan(ctx context.Context, path string, consume func(netip.Pref
 }
 
 func (s *Service) missingPaths() []string {
-	paths := []string{s.cfg.ASNDBPath(), s.cfg.CountryDBPath(), s.cfg.CityDBPath()}
+	files := s.databaseFiles()
 	var missing []string
-	for _, path := range paths {
-		if _, err := os.Stat(path); err != nil {
-			missing = append(missing, path)
+	for _, file := range files {
+		if _, err := os.Stat(file.Path); err != nil {
+			missing = append(missing, file.Path)
 		}
 	}
 	return missing
+}
+
+type databaseFile struct {
+	Name string
+	Path string
+}
+
+func (s *Service) databaseFiles() []databaseFile {
+	return []databaseFile{
+		{Name: "ASN", Path: s.cfg.ASNDBPath()},
+		{Name: "Country", Path: s.cfg.CountryDBPath()},
+		{Name: "City", Path: s.cfg.CityDBPath()},
+	}
 }
 
 func normalizeCityValue(value string) string {

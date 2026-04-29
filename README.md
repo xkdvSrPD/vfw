@@ -8,7 +8,8 @@
 - Uses a dedicated `iptables` chain to avoid colliding with Docker or other tooling
 - Creates one `ipset` per user-added rule
 - Resolves `asn`, `country`, and `city` selectors from bundled GeoLite mmdb files
-- Supports incremental `reload` and scheduled `refresh`
+- Applies saved config during `enable`, `reload`, and `refresh`
+- Downloads mmdb files on demand when they are missing or outdated
 - Logs refresh activity to `/var/log/vfw/vfw.log`
 
 ## Supported Environment
@@ -37,6 +38,8 @@ vfw reload
 vfw refresh --force
 ```
 
+`vfw allow` and `vfw delete` only update `/etc/vfw/rules.json`. Runtime firewall and `ipset` changes are applied when you run `vfw enable`, `vfw reload`, or `vfw refresh`.
+
 ## Selector Notes
 
 - `asn`: numeric ASN list, comma-separated
@@ -48,7 +51,9 @@ vfw refresh --force
 
 - Default refresh interval is `1` day
 - Override with `VFW_REFRESH_DAYS`
-- Package cron runs `vfw refresh` hourly; the binary decides whether the interval has elapsed
+- Package install does not download mmdb files
+- Package cron runs `vfw refresh` hourly; the binary refreshes mmdb files only when they are missing or older than the configured interval
+- `vfw enable` and `vfw reload` also perform the same on-demand mmdb freshness check before applying rules
 - `vfw refresh --force` bypasses the interval check
 
 ## Environment Overrides
@@ -71,6 +76,7 @@ make deb VERSION=0.1.0 ARCH=amd64
 ```
 
 The generated package is written to `dist/` and installs the binary to `/usr/local/bin/vfw`.
+The package does not fetch mmdb files during `apt install`; the first `vfw enable`, `vfw reload`, or `vfw refresh` downloads them when needed.
 
 ## Release Flow
 
