@@ -30,9 +30,11 @@ jobs:
           export VERSION
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           ARCH=amd64 bash scripts/build-deb.sh
+          ARCH=amd64 FULL_BUILD=true bash scripts/build-deb.sh
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
-          files: dist/*.deb
+          files: |
+            dist/*.deb
           generate_release_notes: true

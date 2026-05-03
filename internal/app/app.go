@@ -283,7 +283,22 @@ func (a *App) refresh(ctx context.Context, args []string) error {
 
 func (a *App) version() error {
 	_, err := fmt.Fprintf(a.out, "vfw %s\n", buildinfo.Summary())
-	return err
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(a.out)
+	if a.cfg.MMDBDisabled {
+		fmt.Fprintln(a.out, "MMDB updates: disabled")
+	}
+	metadatas := a.mmdb.ReadMetadatas()
+	for _, m := range metadatas {
+		if !m.Present {
+			fmt.Fprintf(a.out, "  %s: not present\n", m.Name)
+			continue
+		}
+		fmt.Fprintf(a.out, "  %s: type=%s built=%s size=%d\n", m.Name, m.DatabaseType, m.BuildTime, m.Size)
+	}
+	return nil
 }
 
 func (a *App) applyRules(ctx context.Context, rules []model.Rule) (bool, error) {
@@ -296,6 +311,12 @@ func (a *App) applyRules(ctx context.Context, rules []model.Rule) (bool, error) 
 	}
 	downloaded := false
 	if needsMMDB {
+		if a.cfg.MMDBDisabled {
+			missing := a.mmdb.MissingPaths()
+			if len(missing) > 0 {
+				return false, fmt.Errorf("mmdb updates are disabled and required files are missing: %s\nrun 'vfw version' to inspect mmdb status", strings.Join(missing, ", "))
+			}
+		}
 		var err error
 		downloaded, err = a.mmdb.EnsureCurrent(ctx, a.cfg.RefreshDays, false)
 		if err != nil {

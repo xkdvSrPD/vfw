@@ -32,6 +32,7 @@ type Config struct {
 	LogDir         string
 	DataDir        string
 	RefreshDays    int
+	MMDBDisabled   bool
 	IPTablesBinary string
 	IPSetBinary    string
 }
@@ -59,6 +60,7 @@ func Load() (Config, error) {
 		LogDir:         envString("VFW_LOG_DIR", "/var/log/vfw"),
 		DataDir:        envString("VFW_DATA_DIR", dataDir),
 		RefreshDays:    refreshDays,
+		MMDBDisabled:   strings.EqualFold(envString("VFW_MMDB_DISABLED", ""), "true"),
 		IPTablesBinary: envString("VFW_IPTABLES_BIN", "iptables"),
 		IPSetBinary:    envString("VFW_IPSET_BIN", "ipset"),
 	}, nil

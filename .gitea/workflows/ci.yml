@@ -25,7 +25,9 @@ jobs:
         run: CGO_ENABLED=1 go test -race ./...
       - name: Build deb
         run: VERSION=0.0.0-ci-${GITHUB_SHA::7} ARCH=amd64 bash scripts/build-deb.sh
-      - name: Inspect package
+      - name: Build full deb
+        run: VERSION=0.0.0-ci-${GITHUB_SHA::7} ARCH=amd64 FULL_BUILD=true bash scripts/build-deb.sh
+      - name: Inspect packages
         run: |
           ls -lh dist
           sha256sum dist/*.deb

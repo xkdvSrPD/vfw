@@ -28,6 +28,41 @@ type DatabaseStatus struct {
 	NeedsRefresh bool
 }
 
+// FileMetadata describes a single mmdb file on disk.
+type FileMetadata struct {
+	Name         string
+	Present      bool
+	DatabaseType string
+	BuildTime    string
+	Size         int64
+}
+
+// ReadMetadatas reads metadata for all three managed mmdb files.
+func (s *Service) ReadMetadatas() []FileMetadata {
+	files := s.databaseFiles()
+	result := make([]FileMetadata, 0, len(files))
+	for _, f := range files {
+		fm := FileMetadata{Name: f.Name}
+		info, err := os.Stat(f.Path)
+		if err != nil {
+			result = append(result, fm)
+			continue
+		}
+		fm.Present = true
+		fm.Size = info.Size()
+		db, err := maxminddb.Open(f.Path)
+		if err != nil {
+			result = append(result, fm)
+			continue
+		}
+		fm.DatabaseType = db.Metadata.DatabaseType
+		fm.BuildTime = db.Metadata.BuildTime().UTC().Format(time.RFC3339)
+		db.Close()
+		result = append(result, fm)
+	}
+	return result
+}
+
 // Service resolves vfw rules through local mmdb files.
 type Service struct {
 	cfg    envcfg.Config
@@ -86,7 +121,11 @@ func (s *Service) EnsureDatabases(ctx context.Context, downloadIfMissing bool) e
 }
 
 // EnsureCurrent refreshes the managed mmdb files when they are missing, stale, or force is true.
+// When mmdb updates are disabled, it returns immediately without downloading.
 func (s *Service) EnsureCurrent(ctx context.Context, refreshDays int, force bool) (bool, error) {
+	if s.cfg.MMDBDisabled {
+		return false, nil
+	}
 	status, err := s.Inspect(refreshDays)
 	if err != nil {
 		return false, err
@@ -331,6 +370,11 @@ func (s *Service) scan(ctx context.Context, path string, consume func(netip.Pref
 		}
 	}
 	return nil
+}
+
+// MissingPaths returns absolute paths for mmdb files that are not present on disk.
+func (s *Service) MissingPaths() []string {
+	return s.missingPaths()
 }
 
 func (s *Service) missingPaths() []string {

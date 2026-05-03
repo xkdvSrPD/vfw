@@ -28,5 +28,9 @@ jobs:
         run: go test ./...
       - name: Build deb
         run: VERSION="${TAG_NAME#v}" ARCH=amd64 bash scripts/build-deb.sh
-      - name: Publish release
-        run: ARTIFACT_PATH="$(ls dist/*.deb)" RELEASE_BODY="Automated release for ${TAG_NAME}" bash scripts/publish-release.sh
+      - name: Build full deb
+        run: VERSION="${TAG_NAME#v}" ARCH=amd64 FULL_BUILD=true bash scripts/build-deb.sh
+      - name: Publish regular release
+        run: ARTIFACT_PATH="$(ls dist/vfw_*_amd64.deb | grep -v '\-full')" RELEASE_BODY="Automated release for ${TAG_NAME}" bash scripts/publish-release.sh
+      - name: Publish full release
+        run: ARTIFACT_PATH="$(ls dist/*-full.deb)" RELEASE_BODY="Full release for ${TAG_NAME} (bundled mmdb, updates disabled)" bash scripts/publish-release.sh
