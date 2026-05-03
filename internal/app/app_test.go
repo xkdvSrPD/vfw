@@ -144,6 +144,7 @@ func TestStatusShowsSummaryOnly(t *testing.T) {
 	executor.SetInputJump(true)
 	executor.EnsureSet(rule.SetName)
 	executor.AddSetEntry(rule.SetName, "1.1.1.1")
+	executor.EnsureChain(rule.PortChainName(model.ProtocolTCP))
 
 	if err := testApp.status(context.Background()); err != nil {
 		t.Fatalf("status returned error: %v", err)
@@ -155,6 +156,8 @@ func TestStatusShowsSummaryOnly(t *testing.T) {
 		"Pending Reload: yes",
 		"MMDB: current",
 		"IPSets: 1 loaded",
+		"ACCEPT",
+		"DROP",
 		rule.SetName,
 	} {
 		if !strings.Contains(output, needle) {
@@ -298,6 +301,13 @@ func (f *fakeExecutor) SetEntryCount(name string) int {
 	return len(f.sets[name])
 }
 
+func (f *fakeExecutor) EnsureChain(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.chains[name] = struct{}{}
+}
+
 func (f *fakeExecutor) runIPSet(args []string) (string, error) {
 	if len(args) == 0 {
 		return "", fmt.Errorf("missing ipset arguments")
@@ -401,6 +411,18 @@ func (f *fakeExecutor) runIPTables(args []string) (string, error) {
 		return "", nil
 	case "-A":
 		return "", nil
+	case "-v":
+		if len(args) >= 4 && args[1] == "-x" && args[2] == "-L" {
+			chainName := args[3]
+			if _, ok := f.chains[chainName]; !ok {
+				return "", fmt.Errorf("chain %s does not exist", chainName)
+			}
+			return fmt.Sprintf(
+				"Chain %s (1 references)\n    pkts      bytes target     prot opt in     out     source               destination\n    3421   215040 ACCEPT     tcp  --  any    any     0.0.0.0/0            0.0.0.0/0             match-set vfw_xxx src\n      89    10680 DROP       tcp  --  any    any     0.0.0.0/0            0.0.0.0/0\n",
+				chainName,
+			), nil
+		}
+		return "", fmt.Errorf("unexpected iptables -v arguments %q", strings.Join(args, " "))
 	case "-S":
 		var chains []string
 		for chain := range f.chains {

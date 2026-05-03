@@ -433,6 +433,47 @@ func stringSliceContains(values []string, needle string) bool {
 	return false
 }
 
+// ChainStats holds per-target packet and byte counters for a single iptables chain.
+type ChainStats struct {
+	AcceptedPkts  uint64
+	AcceptedBytes uint64
+	DroppedPkts   uint64
+	DroppedBytes  uint64
+}
+
+// ChainStats returns packet and byte counters for ACCEPT and DROP rules in a chain.
+func (m *Manager) ChainStats(ctx context.Context, chainName string) (ChainStats, error) {
+	output, err := m.exec.Run(ctx, m.cfg.IPTablesBinary, "-w", "-v", "-x", "-L", chainName)
+	if err != nil {
+		return ChainStats{}, fmt.Errorf("read chain stats for %s: %w", chainName, err)
+	}
+	var stats ChainStats
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 {
+			continue
+		}
+		pkts, err := strconv.ParseUint(fields[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		bytes, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		target := fields[2]
+		switch target {
+		case "ACCEPT":
+			stats.AcceptedPkts += pkts
+			stats.AcceptedBytes += bytes
+		case "DROP":
+			stats.DroppedPkts += pkts
+			stats.DroppedBytes += bytes
+		}
+	}
+	return stats, nil
+}
+
 func canonicalSetMember(value string) string {
 	value = strings.TrimSpace(value)
 	if prefix, err := netip.ParsePrefix(value); err == nil {

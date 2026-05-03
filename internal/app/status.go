@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"vfw/internal/firewall"
 	"vfw/internal/mmdb"
 	"vfw/internal/model"
 	"vfw/internal/table"
@@ -34,7 +35,9 @@ func (a *App) status(ctx context.Context) error {
 		fmt.Fprintf(a.out, "MMDB: %s\n", mmdbStatusLabel(mmdbStatus))
 	}
 
-	rows, loadedSetCount, err := a.ipsetStatusRows(ctx, rules)
+	chainStats := a.collectChainStats(ctx, rules)
+
+	rows, loadedSetCount, err := a.ipsetStatusRows(ctx, rules, chainStats)
 	if err != nil {
 		fmt.Fprintf(a.out, "IPSets: error: %v\n", err)
 		return nil
@@ -46,13 +49,31 @@ func (a *App) status(ctx context.Context) error {
 
 	fmt.Fprintln(a.out)
 	fmt.Fprint(a.out, table.Render(
-		[]string{"#", "PORT", "FROM", "ENTRIES", "STATE", "IPSET"},
+		[]string{"#", "PORT", "FROM", "ENTRIES", "STATE", "ACCEPT", "DROP", "IPSET"},
 		rows,
 	))
 	return nil
 }
 
-func (a *App) ipsetStatusRows(ctx context.Context, rules []model.Rule) ([][]string, int, error) {
+func (a *App) collectChainStats(ctx context.Context, rules []model.Rule) map[string]firewall.ChainStats {
+	seen := map[string]struct{}{}
+	for _, rule := range rules {
+		for _, protocol := range rule.Protocols {
+			seen[rule.PortChainName(protocol)] = struct{}{}
+		}
+	}
+	stats := make(map[string]firewall.ChainStats, len(seen))
+	for chainName := range seen {
+		cs, err := a.fw.ChainStats(ctx, chainName)
+		if err != nil {
+			continue
+		}
+		stats[chainName] = cs
+	}
+	return stats
+}
+
+func (a *App) ipsetStatusRows(ctx context.Context, rules []model.Rule, chainStats map[string]firewall.ChainStats) ([][]string, int, error) {
 	setNames, err := a.fw.ListVFWSets(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -79,12 +100,17 @@ func (a *App) ipsetStatusRows(ctx context.Context, rules []model.Rule) ([][]stri
 		if rule.Source.Type == model.SourceAll {
 			status = "all"
 		}
+
+		accepted, dropped := aggregateChainStats(rule, chainStats)
+
 		rows = append(rows, []string{
 			strconv.Itoa(index + 1),
 			strconv.Itoa(rule.Port),
 			rule.SourceLabel(),
 			entryCount,
 			status,
+			accepted,
+			dropped,
 			rule.SetName,
 		})
 	}
@@ -104,11 +130,39 @@ func (a *App) ipsetStatusRows(ctx context.Context, rules []model.Rule) ([][]stri
 			"-",
 			strconv.Itoa(counts[setName]),
 			"stale",
+			"-",
+			"-",
 			setName,
 		})
 	}
 
 	return rows, len(setNames), nil
+}
+
+func aggregateChainStats(rule model.Rule, chainStats map[string]firewall.ChainStats) (string, string) {
+	var totalAcceptedPkts, totalAcceptedBytes uint64
+	var totalDroppedPkts, totalDroppedBytes uint64
+
+	for _, protocol := range rule.Protocols {
+		cs, ok := chainStats[rule.PortChainName(protocol)]
+		if !ok {
+			return "-", "-"
+		}
+		totalAcceptedPkts += cs.AcceptedPkts
+		totalAcceptedBytes += cs.AcceptedBytes
+		totalDroppedPkts += cs.DroppedPkts
+		totalDroppedBytes += cs.DroppedBytes
+	}
+
+	accept := fmt.Sprintf("%s / %s",
+		table.FormatCount(totalAcceptedPkts),
+		table.FormatBytes(totalAcceptedBytes),
+	)
+	drop := fmt.Sprintf("%s / %s",
+		table.FormatCount(totalDroppedPkts),
+		table.FormatBytes(totalDroppedBytes),
+	)
+	return accept, drop
 }
 
 func firewallStatusLabel(configuredEnabled bool, inputJumpPresent bool) string {
